@@ -1,7 +1,7 @@
 name: Permanent Linux RDP & SSH Server
 
 on:
-  workflow_dispatch:        # اجرای فقط به‌صورت دستی با دکمه Run (زمان‌بندی ۶ ساعته حذف شد)
+  workflow_dispatch:        # اجرای دستی با دکمه Run
 
 jobs:
   build:
@@ -24,14 +24,17 @@ jobs:
       - name: 3. Setup OpenSSH & Desktop Environment (XFCE + RDP)
         run: |
           sudo apt-get update
-          sudo apt-get install -y openssh-server xfce4 xfce4-goodies xrdp dbus-x11
+          sudo apt-get install -y openssh-server xfce4 xfce4-goodies xrdp dbus-x11 x11-xserver-utils
+          
+          # افزودن دسترسی xrdp به گواهی‌ها
+          sudo adduser xrdp ssl-cert
           
           # فعال‌سازی لاگین با پسورد برای SSH
           sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
           sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
           sudo systemctl restart ssh
 
-      - name: 4. Create User (behrad) with Root Access & RDP Config
+      - name: 4. Create User (behrad) with Root Access & Fix RDP D-Bus
         env:
           SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
         run: |
@@ -40,9 +43,16 @@ jobs:
           sudo usermod -aG sudo behrad
           echo "behrad ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/behrad
           
-          # تنظیم محیط گرافیکی XFCE برای RDP
-          echo "xfce4-session" | sudo tee /home/behrad/.xsession
-          sudo chown -R behrad:behrad /home/behrad/.xsession
+          # حل مشکل D-Bus و لود نشدن نشست XFCE
+          cat << 'EOF' | sudo tee /home/behrad/.xsession
+          unset DBUS_SESSION_BUS_ADDRESS
+          unset XDG_RUNTIME_DIR
+          exec dbus-launch --exit-with-session startxfce4
+          EOF
+          
+          sudo chown behrad:behrad /home/behrad/.xsession
+          
+          # ری‌استارت سرویس xrdp
           sudo systemctl enable xrdp
           sudo systemctl restart xrdp
           
