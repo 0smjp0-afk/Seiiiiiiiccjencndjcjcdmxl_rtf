@@ -1,7 +1,7 @@
 name: Permanent Linux RDP & SSH Server
 
 on:
-  workflow_dispatch:        # اجرای دستی با دکمه Run
+  workflow_dispatch:
 
 jobs:
   build:
@@ -34,7 +34,7 @@ jobs:
           sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
           sudo systemctl restart ssh
 
-      - name: 4. Create User (behrad) with Root Access & Fix RDP D-Bus
+      - name: 4. Create User (behrad) & Fix RDP D-Bus Session
         env:
           SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
         run: |
@@ -43,14 +43,20 @@ jobs:
           sudo usermod -aG sudo behrad
           echo "behrad ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/behrad
           
-          # حل مشکل D-Bus و لود نشدن نشست XFCE
+          # ساخت فایل .xsession با متغیرهای کامل XFCE و D-Bus
           cat << 'EOF' | sudo tee /home/behrad/.xsession
+          #!/bin/sh
+          export XDG_SESSION_TYPE=x11
+          export XDG_CURRENT_DESKTOP=XFCE
+          export XDG_CONFIG_DIRS=/etc/xdg
           unset DBUS_SESSION_BUS_ADDRESS
           unset XDG_RUNTIME_DIR
           exec dbus-launch --exit-with-session startxfce4
           EOF
           
-          sudo chown behrad:behrad /home/behrad/.xsession
+          # اعطای مجوز اجرا و مالکیت به کاربر behrad
+          sudo chmod +x /home/behrad/.xsession
+          sudo chown -R behrad:behrad /home/behrad
           
           # ری‌استارت سرویس xrdp
           sudo systemctl enable xrdp
