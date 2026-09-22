@@ -1,9 +1,7 @@
-name: Permanent Linux SSH Server
+name: Permanent Linux RDP & SSH Server
 
 on:
-  schedule:
-    - cron: '0 */6 * * *'  # روشن شدن خودکار هر ۶ ساعت یک‌بار (۲۴/۷)
-  workflow_dispatch:        # استارت دستی با دکمه Run
+  workflow_dispatch:        # اجرای فقط به‌صورت دستی با دکمه Run (زمان‌بندی ۶ ساعته حذف شد)
 
 jobs:
   build:
@@ -18,58 +16,69 @@ jobs:
       - name: 2. Restore Persistent Workspace
         uses: actions/cache@v4
         with:
-          path: /home/cynetadmin/workspace
+          path: /home/behrad/workspace
           key: cynet-ssh-workspace-${{ github.run_id }}
           restore-keys: |
             cynet-ssh-workspace-
 
-      - name: 3. Setup OpenSSH Server
+      - name: 3. Setup OpenSSH & Desktop Environment (XFCE + RDP)
         run: |
           sudo apt-get update
-          sudo apt-get install -y openssh-server
+          sudo apt-get install -y openssh-server xfce4 xfce4-goodies xrdp dbus-x11
           
-          # فعال‌سازی لاگین با پسورد
+          # فعال‌سازی لاگین با پسورد برای SSH
           sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
           sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
           sudo systemctl restart ssh
 
-      - name: 4. Create User (cynetadmin) with Root Access
+      - name: 4. Create User (behrad) with Root Access & RDP Config
+        env:
+          SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
         run: |
-          sudo useradd -m -s /bin/bash cynetadmin || true
-          echo "cynetadmin:Cynet@2026" | sudo chpasswd
-          sudo usermod -aG sudo cynetadmin
-          echo "cynetadmin ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/cynetadmin
+          sudo useradd -m -s /bin/bash behrad || true
+          echo "behrad:$SERVER_PASSWORD" | sudo chpasswd
+          sudo usermod -aG sudo behrad
+          echo "behrad ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/behrad
+          
+          # تنظیم محیط گرافیکی XFCE برای RDP
+          echo "xfce4-session" | sudo tee /home/behrad/.xsession
+          sudo chown -R behrad:behrad /home/behrad/.xsession
+          sudo systemctl enable xrdp
+          sudo systemctl restart xrdp
           
           # ساخت و مجوز پوشه هارد دائمی
-          sudo mkdir -p /home/cynetadmin/workspace
-          sudo chown -R cynetadmin:cynetadmin /home/cynetadmin/workspace
+          sudo mkdir -p /home/behrad/workspace
+          sudo chown -R behrad:behrad /home/behrad/workspace
 
       - name: 5. Connect Tailscale VPN & Show Access Info
         env:
           TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
         run: |
           curl -fsSL https://tailscale.com/install.sh | sh
-          sudo tailscale up --authkey="$TAILSCALE_AUTHKEY" --hostname="cynet-linux-ssh"
+          sudo tailscale up --authkey="$TAILSCALE_AUTHKEY" --hostname="cynet-linux-desktop"
           
           TS_IP=$(tailscale ip -4)
           
           echo "=================================================="
-          echo "  >>> PERMANENT LINUX SSH SERVER IS LIVE! <<<"
+          echo "  >>> PERMANENT LINUX DESKTOP & SSH IS LIVE! <<<"
           echo "  Tailscale IP  : $TS_IP"
-          echo "  Username      : cynetadmin"
-          echo "  Password      : Cynet@2026"
+          echo "  Username      : behrad"
+          echo "  Password      : (Read from Secret: SERVER_PASSWORD)"
           echo "  ------------------------------------------------"
-          echo "  💻 Connect via Terminal / CMD:"
-          echo "  >> ssh cynetadmin@$TS_IP"
+          echo "  🖥️ Connect via RDP (Remote Desktop):"
+          echo "  >> IP: $TS_IP"
           echo "  ------------------------------------------------"
-          echo "  💾 Persistent Folder : /home/cynetadmin/workspace"
+          echo "  💻 Connect via SSH (Terminal):"
+          echo "  >> ssh behrad@$TS_IP"
+          echo "  ------------------------------------------------"
+          echo "  💾 Persistent Folder : /home/behrad/workspace"
           echo "=================================================="
 
       - name: 6. Server Keep-Alive (5h 55m)
         run: |
           for i in {1..355}; do
             sleep 60
-            echo "[$i/355] Linux SSH Server is active..."
+            echo "[$i/355] Linux Desktop Server is active..."
           done
 
       # ذخیره خودکار فایل‌های پوشه دائمی قبل از ری‌استارت
@@ -77,5 +86,5 @@ jobs:
         uses: actions/cache@v4
         if: always()
         with:
-          path: /home/cynetadmin/workspace
+          path: /home/behrad/workspace
           key: cynet-ssh-workspace-${{ github.run_id }}
